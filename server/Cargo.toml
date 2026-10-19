@@ -1,0 +1,39 @@
+[package]
+name = "comfyui-prompt-server"
+version = "2.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A private page and API for fixed ComfyUI workflows: send a prompt (and a picture to edit), get the image."
+publish = false
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+base64 = "0.23"
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+getrandom = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "multipart", "query", "stream"] }
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.11"
+subtle = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal"] }
+tokio-tungstenite = "0.30"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = "1"
+
+[dev-dependencies]
+# The fake ComfyUI in tests/api.rs reads uploads.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "multipart", "query", "tokio"] }
+http-body-util = "0.1"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

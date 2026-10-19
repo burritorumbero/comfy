@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ComfyUI Prompt</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --surface: #ffffff;
+    --text: #1d1d1b;
+    --muted: #6a6a64;
+    --border: #deded8;
+    --accent: #2f5bd3;
+    --accent-text: #ffffff;
+    --danger: #b3261e;
+    --ok: #1f7a3d;
+    --placeholder: #ecece8;
+    --ratio: 1 / 1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413;
+      --surface: #1f1f1d;
+      --text: #ecece8;
+      --muted: #a2a29a;
+      --border: #34342f;
+      --accent: #7a9cff;
+      --accent-text: #0e1530;
+      --danger: #ff8a80;
+      --ok: #6fcf8f;
+      --placeholder: #2a2a27;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 760px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  h1 { font-size: 1.25rem; margin: 0; overflow-wrap: anywhere; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill[data-ok="true"] .dot { background: var(--ok); }
+  .pill[data-ok="false"] .dot { background: var(--danger); }
+
+  form { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  textarea {
+    width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px;
+    font: inherit; color: inherit; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .hint { color: var(--muted); font-size: .875rem; margin: 0; flex: 1 1 260px; }
+  .form-row .primary { margin-left: auto; }
+  @media (pointer: coarse) { .keys { display: none; } }
+  .error { color: var(--danger); margin: 10px 0 0; overflow-wrap: anywhere; }
+
+  .button, button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 40px; padding: 8px 14px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font: inherit; font-size: .9375rem; text-decoration: none; cursor: pointer;
+  }
+  .primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; min-width: 120px; }
+  button:disabled { opacity: .6; cursor: default; }
+
+  #jobs { display: grid; gap: 16px; margin-top: 20px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  .job { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .media { display: grid; gap: 2px; background: var(--border); }
+  .media.multi { grid-template-columns: 1fr 1fr; }
+  .media a { display: block; background: var(--placeholder); }
+  .media img { display: block; width: 100%; height: auto; max-height: 85vh; object-fit: contain; }
+  .waiting {
+    aspect-ratio: var(--ratio); max-height: 70vh; width: 100%;
+    display: grid; place-content: center; justify-items: center; gap: 12px;
+    background: var(--placeholder); color: var(--muted); padding: 16px; text-align: center;
+  }
+  .bar { width: min(260px, 70vw); height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+  .bar.indeterminate > span { width: 30%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+  @media (prefers-reduced-motion: reduce) { .bar.indeterminate > span { animation: none; width: 100%; opacity: .4; } }
+  .body { padding: 12px 14px 14px; }
+  .prompt-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .prompt-text.open { display: block; }
+  .status { margin: 6px 0 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+  .job[data-state="error"] .status, .job[data-state="lost"] .status { color: var(--danger); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .actions .push { margin-left: auto; }
+  .more { text-align: center; margin: 16px 0 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1 id="title">ComfyUI Prompt</h1>
+    <span class="pill" id="comfy" data-ok=""><span class="dot"></span><span id="comfy-text">Checking ComfyUI…</span></span>
+  </header>
+
+  <form id="form" autocomplete="off">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" name="prompt" required autofocus placeholder="Describe the image you want"></textarea>
+    <div class="form-row">
+      <p class="hint"><span id="hint">Everything else is fixed by the workflow.</span> <span class="keys">Ctrl+Enter generates.</span></p>
+      <button class="primary" id="generate" type="submit">Generate</button>
+    </div>
+    <p class="error" id="form-error" role="alert" hidden></p>
+  </form>
+
+  <section id="jobs" aria-live="polite" aria-label="Generated images"></section>
+  <p class="more"><button type="button" id="more" hidden>Show older</button></p>
+</div>
+
+<script>
+"use strict";
+
+// The history lives on the server, so this page, the iPhone app and every other browser
+// show the same jobs. Only the image shape is remembered here, to size placeholders.
+const RATIO_KEY = "comfy-prompt-server.ratio";
+const PAGE_SIZE = 30;
+const ACTIVE = new Set(["queued", "running"]);
+
+const $ = (id) => document.getElementById(id);
+const form = $("form"), promptBox = $("prompt"), generateButton = $("generate"), formError = $("form-error");
+const list = $("jobs"), moreButton = $("more");
+
+const storage = {
+  get(key, fallback) {
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode: nothing to keep */ }
+  },
+};
+
+let jobs = [];          // newest first, as the server lists them
+let more = false;       // older jobs exist beyond what is shown
+let loadedPastFirstPage = false;
+const cards = new Map();
+const runningSince = new Map();
+
+const ratio = storage.get(RATIO_KEY, null);
+if (ratio) document.documentElement.style.setProperty("--ratio", ratio);
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    cache: "no-store",
+  });
+  let body = null;
+  try { body = await response.json(); } catch { /* empty or not JSON */ }
+  if (!response.ok) {
+    const error = new Error((body && body.error) || `The server answered ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
+  return body;
+}
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === undefined || value === null || value === false) continue;
+    if (key === "text") node.textContent = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  for (const child of [].concat(children)) if (child) node.append(child);
+  return node;
+}
+
+function clock(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function ago(ms) {
+  if (!ms) return "";
+  const minutes = Math.floor((Date.now() - ms) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+function statusText(job) {
+  const seed = job.seed != null ? ` · seed ${job.seed}` : "";
+  switch (job.state) {
+    case "queued":
+      return job.ahead ? `Queued · ${job.ahead} ahead${seed}` : `Starting…${seed}`;
+    case "running": {
+      const p = job.progress;
+      const steps = p && p.max > 1 ? `step ${p.value} of ${p.max} · ` : "";
+      const since = runningSince.get(job.id) || job.created;
+      return `Generating · ${steps}${since ? clock(Date.now() - since) : ""}${seed}`;
+    }
+    case "done": {
+      const when = ago(job.created);
+      return `Done${job.seconds != null ? ` in ${job.seconds} s` : ""}${when ? ` · ${when}` : ""}${seed}`;
+    }
+    case "cancelled":
+      return "Cancelled";
+    case "error":
+    case "lost":
+      return job.error || "Failed";
+    default:
+      return "";
+  }
+}
+
+function media(job) {
+  if (job.state === "done" && job.images && job.images.length) {
+    return el("div", { class: "media" + (job.images.length > 1 ? " multi" : "") },
+      job.images.map((image, n) => el("a", { href: image.url, target: "_blank", rel: "noopener", title: "Open full size" }, [
+        el("img", {
+          src: image.preview,
+          alt: `Generated image ${n + 1}${job.images.length > 1 ? ` of ${job.images.length}` : ""} for: ${job.prompt}`,
+          loading: "lazy",
+          onload: (event) => rememberRatio(event.target),
+          onerror: (event) => imageMissing(event.target),
+        }),
+      ])));
+  }
+  if (!ACTIVE.has(job.state)) return null;
+  const p = job.progress;
+  const known = job.state === "running" && p && p.max > 1;
+  const bar = el("div", { class: "bar" + (known ? "" : " indeterminate"), role: "progressbar",
+    "aria-label": "Progress", "aria-valuemin": known ? 0 : null, "aria-valuemax": known ? p.max : null, "aria-valuenow": known ? p.value : null },
+    [el("span", { style: known ? `width:${Math.round((100 * p.value) / p.max)}%` : null })]);
+  return el("div", { class: "waiting" }, [el("span", { text: job.state === "queued" ? "Waiting for ComfyUI" : "Generating" }), bar]);
+}
+
+function rememberRatio(img) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  const value = `${img.naturalWidth} / ${img.naturalHeight}`;
+  if (value !== ratio) {
+    document.documentElement.style.setProperty("--ratio", value);
+    storage.set(RATIO_KEY, value);
+  }
+}
+
+function imageMissing(img) {
+  img.closest("a").replaceWith(el("div", { class: "waiting", text: "This image is no longer available from ComfyUI." }));
+}
+
+function actions(job) {
+  const buttons = [];
+  if (job.state === "done") {
+    job.images.forEach((image, n) => buttons.push(el("a", {
+      class: "button primary", href: image.download, download: image.filename,
+      text: job.images.length > 1 ? `Download ${n + 1}` : "Download",
+    })));
+  }
+  buttons.push(el("button", { type: "button", text: "Use prompt", onclick: () => reuse(job) }));
+  if (ACTIVE.has(job.state)) {
+    buttons.push(el("button", { type: "button", class: "push", text: "Cancel", onclick: (e) => cancel(job, e.target) }));
+  } else {
+    buttons.push(el("button", { type: "button", class: "push", text: "Remove", onclick: (e) => removeJob(job, e.target) }));
+  }
+  return el("div", { class: "actions" }, buttons);
+}
+
+function card(job) {
+  const promptText = el("p", { class: "prompt-text", text: job.prompt || "(no prompt saved)", title: "Click to show all",
+    onclick: (e) => e.currentTarget.classList.toggle("open") });
+  return el("article", { class: "job", "data-state": job.state, "data-id": job.id }, [
+    media(job),
+    el("div", { class: "body" }, [promptText, el("p", { class: "status", text: statusText(job) }), actions(job)]),
+  ]);
+}
+
+// Rebuild a card only when something it shows has changed, so images do not reload.
+function signature(job) {
+  return JSON.stringify([job.state, job.ahead, job.progress && job.progress.value, job.progress && job.progress.max,
+    job.seed, job.error, job.images && job.images.length]);
+}
+
+function render() {
+  const seen = new Set();
+  let previous = null;
+  for (const job of jobs) {
+    seen.add(job.id);
+    let entry = cards.get(job.id);
+    const sig = signature(job);
+    if (!entry || entry.sig !== sig) {
+      const next = card(job);
+      if (entry) entry.node.replaceWith(next);
+      entry = { node: next, sig };
+      cards.set(job.id, entry);
+    } else {
+      entry.node.querySelector(".status").textContent = statusText(job);
+    }
+    const expectedPosition = previous ? previous.nextSibling : list.firstChild;
+    if (entry.node !== expectedPosition) list.insertBefore(entry.node, expectedPosition);
+    previous = entry.node;
+  }
+  for (const [id, entry] of cards) {
+    if (!seen.has(id)) { entry.node.remove(); cards.delete(id); }
+  }
+  const empty = list.querySelector(".empty");
+  if (!jobs.length && !empty) list.append(el("p", { class: "empty", text: "Your images will appear here." }));
+  if (jobs.length && empty) empty.remove();
+  moreButton.hidden = !more;
+}
+
+function sortJobs() {
+  jobs.sort((a, b) => b.created - a.created);
+}
+
+function upsert(job) {
+  if (job.state === "running" && !runningSince.has(job.id)) runningSince.set(job.id, Date.now());
+  const index = jobs.findIndex((j) => j.id === job.id);
+  if (index >= 0) jobs[index] = job; else { jobs.push(job); sortJobs(); }
+}
+
+function drop(id) {
+  jobs = jobs.filter((j) => j.id !== id);
+}
+
+// Merge the newest page: add new jobs, update known ones, and drop the ones another device
+// removed from that window.
+function mergeFirstPage(page) {
+  const fetched = new Set(page.jobs.map((j) => j.id));
+  const cutoff = page.more && page.jobs.length ? Math.min(...page.jobs.map((j) => j.created)) : -Infinity;
+  jobs = jobs.filter((j) => fetched.has(j.id) || j.created < cutoff);
+  page.jobs.forEach(upsert);
+  sortJobs();
+  if (!loadedPastFirstPage) more = page.more;
+}
+
+function showError(message) {
+  formError.textContent = message || "";
+  formError.hidden = !message;
+}
+
+async function refreshList() {
+  try {
+    mergeFirstPage(await api(`/api/jobs?limit=${PAGE_SIZE}`));
+    render();
+    poll();
+  } catch (error) {
+    if (error.status === 401) setComfy(false, "Password changed: reload the page");
+  }
+}
+
+async function loadOlder() {
+  const oldest = jobs[jobs.length - 1];
+  if (!oldest) return;
+  moreButton.disabled = true;
+  try {
+    const page = await api(`/api/jobs?limit=${PAGE_SIZE}&before=${encodeURIComponent(oldest.id)}`);
+    page.jobs.forEach(upsert);
+    more = page.more;
+    loadedPastFirstPage = true;
+    render();
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    moreButton.disabled = false;
+  }
+}
+
+async function generate() {
+  const prompt = promptBox.value.trim();
+  if (!prompt) { showError("Type a prompt first."); promptBox.focus(); return; }
+  showError("");
+  generateButton.disabled = true;
+  generateButton.textContent = "Sending…";
+  try {
+    upsert(await api("/api/generate", { method: "POST", body: JSON.stringify({ prompt }) }));
+    render();
+    poll();
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    generateButton.disabled = false;
+    generateButton.textContent = "Generate";
+  }
+}
+
+function reuse(job) {
+  if (job.prompt) promptBox.value = job.prompt;
+  promptBox.focus();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function cancel(job, button) {
+  button.disabled = true;
+  try {
+    upsert(await api(`/api/jobs/${job.id}/cancel`, { method: "POST" }));
+    render();
+  } catch (error) {
+    button.disabled = false;
+    showError(error.message);
+  }
+}
+
+async function removeJob(job, button) {
+  if (!confirm("Remove this from the history on every device? The image file stays in ComfyUI's output folder.")) return;
+  button.disabled = true;
+  try {
+    await api(`/api/jobs/${job.id}`, { method: "DELETE" });
+  } catch (error) {
+    if (error.status !== 404) { button.disabled = false; showError(error.message); return; }
+  }
+  drop(job.id);
+  render();
+}
+
+let pollTimer = null;
+let polling = false;
+async function poll() {
+  clearTimeout(pollTimer);
+  if (polling) { pollTimer = setTimeout(poll, 300); return; }
+  polling = true;
+  let failed = false;
+  try {
+    for (const job of jobs.filter((j) => ACTIVE.has(j.state))) {
+      try {
+        upsert(await api(`/api/jobs/${job.id}`));
+      } catch (error) {
+        if (error.status === 404) drop(job.id); else failed = true;
+      }
+    }
+    render();
+  } finally {
+    polling = false;
+  }
+  if (failed) setComfy(false, "Server not answering");
+  if (jobs.some((j) => ACTIVE.has(j.state))) pollTimer = setTimeout(poll, failed ? 4000 : 1000);
+}
+
+function setComfy(ok, text) {
+  $("comfy").dataset.ok = String(ok);
+  $("comfy-text").textContent = text;
+}
+
+async function refreshInfo() {
+  try {
+    const info = await api("/api/info");
+    $("title").textContent = info.title;
+    document.title = info.title;
+    setComfy(info.comfy, info.comfy ? "ComfyUI ready" : "ComfyUI offline");
+    promptBox.maxLength = info.maxPromptChars;
+    $("hint").textContent = `Everything else is fixed by the workflow${info.seed === "random" ? ", with a new seed each run" : ""}.`;
+  } catch (error) {
+    setComfy(false, error.status === 401 ? "Password changed: reload the page" : "Server not answering");
+  }
+}
+
+form.addEventListener("submit", (event) => { event.preventDefault(); generate(); });
+promptBox.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); generate(); }
+});
+moreButton.addEventListener("click", loadOlder);
+setInterval(() => { if (jobs.some((j) => j.state === "running")) render(); }, 1000);
+setInterval(refreshInfo, 15000);
+// Pick up jobs started from the app or another browser.
+setInterval(refreshList, 10000);
+
+render();
+refreshInfo();
+refreshList();
+</script>
+</body>
+</html>

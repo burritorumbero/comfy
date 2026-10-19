@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Prompt",
+    "slug": "comfyui-prompt-app",
+    "owner": "grabbiel",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.grabbiel.comfyprompt"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Prompt saves the images you generate to your photo library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": false,
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      "expo-image",
+      "expo-sharing",
+      "expo-font"
+    ],
+    "scheme": "comfyprompt",
+    "backgroundColor": "#000000",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e0283a94-fb7f-49a2-b63a-47b2eae5f0fa"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/e0283a94-fb7f-49a2-b63a-47b2eae5f0fa"
+    }
+  }
+}

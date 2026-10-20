@@ -1,0 +1,50 @@
+name: Release
+
+# A tag such as v2.1.0 (matching server/Cargo.toml) builds the server for macOS on Apple Silicon
+# and attaches it to a GitHub release.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  server:
+    name: Server for macOS
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Check the tag matches the version
+        run: |
+          version=$(cargo pkgid | sed 's/.*[#@]//')
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME doesn't match server/Cargo.toml ($version)."
+            exit 1
+          fi
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Package
+        id: package
+        run: |
+          name="comfyui-prompt-server-$GITHUB_REF_NAME-macos-arm64"
+          dir="$RUNNER_TEMP/$name"
+          mkdir -p "$dir/workflows"
+          cp target/release/comfyui-prompt-server README.md "$dir/"
+          cp workflows/*.json "$dir/workflows/"
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/$name.tar.gz" "$name"
+          (cd "$RUNNER_TEMP" && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          echo "archive=$RUNNER_TEMP/$name.tar.gz" >> "$GITHUB_OUTPUT"
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: gh release create "$GITHUB_REF_NAME" "$ARCHIVE" "$ARCHIVE.sha256" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

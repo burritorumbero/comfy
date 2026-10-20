@@ -1,0 +1,4 @@
+# Your exported workflow, the password hash and the job history stay on your computer.
+/*.json
+/data/
+/target/

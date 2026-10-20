@@ -1,0 +1,107 @@
+name: CI
+
+# Every push and pull request: the server's format, lints and tests, and the app's types, lints,
+# tests and iOS bundle. A push to main that changes the app then publishes it with EAS Update.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  server:
+    name: Server
+    # The server is built for macOS on Apple Silicon, and its switching runs macOS tools (open, ps, lsof).
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+
+  app:
+    name: App
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test -- --ci
+      - run: npx expo-doctor
+      - name: Bundle for iOS
+        run: npx expo export --platform ios --output-dir "$RUNNER_TEMP/bundle"
+
+  publish-app:
+    name: Publish the app
+    needs: [server, app]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Check for app changes
+        id: changes
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::Not published: add an EXPO_TOKEN secret under Settings › Secrets and variables › Actions."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git diff --quiet "$BEFORE" HEAD -- .; then
+            echo "::notice::Not published: nothing in app/ changed."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.publish == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - if: steps.changes.outputs.publish == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.changes.outputs.publish == 'true'
+        run: npm ci
+      - if: steps.changes.outputs.publish == 'true'
+        name: Publish with EAS Update
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          message=$(printf '%s\n' "$COMMIT_MESSAGE" | head -n 1)
+          eas update --channel production --environment production --platform ios --message "$message" --non-interactive
